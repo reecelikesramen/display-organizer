@@ -27,6 +27,10 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Authenticate Docker to Google Cloud
+        run: |
+          gcloud auth configure-docker gcr.io --quiet
+
       - name: Build Docker image
         run: |
           docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest ./bridge
