@@ -1,15 +1,33 @@
-# Use the official Python image from Docker Hub
+# Stage 1: Base image setup
 FROM python:3.13-slim
 
-# Set the working directory inside the container
+# Prevents Python from writing .pyc files to disk and enables unbuffered logging
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Create a non-root user and group for security
+RUN addgroup --system appgroup && adduser --system --group appuser
+
+# Set the working directory
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app files into the container
+# Copy application code into the container
 COPY ./app /app
 
-# Command to run Gunicorn with your FastAPI app
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "main:app"]
+# Change ownership of the app directory to the non-root user
+RUN chown -R appuser:appgroup /app
+
+# Switch to the non-root user
+USER appuser
+
+# Expose port 8080 (Cloud Run expects this port)
+EXPOSE 8080
+
+# Use Gunicorn with Uvicorn workers to serve the FastAPI app.
+# "app.main:app" tells Gunicorn to load the 'app' callable from app/main.py.
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8080", "app.main:app"]
