@@ -1,3 +1,4 @@
+import zipfile
 # ENDPOINTS:
     # POST /create_connection => connection UUID | failure
     # - creates a new connection and returns its UUID
@@ -14,10 +15,12 @@
     # POST /end_connection(UUID) => success | failure
     # - ends the connection with the given UUID, ran from the mobile app
 
-from fastapi import FastAPI, HTTPException, Depends, Path
+from io import BytesIO
+from fastapi import FastAPI, HTTPException, Depends, Path, File
+from fastapi.responses import StreamingResponse
 from google.cloud import storage, firestore
 import uuid
-from typing import Annotated
+from typing import Annotated, Iterator
 
 storage_client = storage.Client()
 db = firestore.Client(database="display-organizer")
@@ -48,7 +51,7 @@ async def join_connection(
     connection_info: Annotated[tuple, Depends(get_connection)]
 ):
     doc_ref, _ = connection_info
-    doc_ref.update({"state": "calibrating"})
+    doc_ref.update({"state": "connected"})
 
 @app.get("/is_mobile_connected/{connection_id}")
 async def is_mobile_connected(
@@ -56,23 +59,7 @@ async def is_mobile_connected(
     connection_info: Annotated[tuple, Depends(get_connection)]
 ):
     _, doc = connection_info
-    return {"connected": doc.to_dict().get("state") == "calibrating"}
-
-@app.post("/change_state/{connection_id}", status_code=204)
-async def change_state(
-    connection_id: Annotated[str, Path()],
-    state: str,
-    connection_info: Annotated[tuple, Depends(get_connection)]
-):
-    doc_ref, doc = connection_info
-
-    # successful state changes are from calibrating to organizing or organizing to done
-    to_from = (doc.to_dict().get("state"), state)
-    if to_from == ("calibrating", "organizing") or to_from == ("organizing", "done"):
-        doc_ref.update({"state": state})
-        return
-
-    raise HTTPException(status_code=400, detail=f"Invalid state transition from {to_from[0]} to {to_from[1]}")
+    return {"connected": doc.to_dict().get("state") == "connected"}
 
 @app.post("/end_connection/{connection_id}", status_code=204)
 async def end_connection(
@@ -81,9 +68,60 @@ async def end_connection(
 ):
     doc_ref, doc = connection_info
 
-    # if the connection is not in the done state, update the state to done
+    # if the connection is not in the done or new state, update the state to done
     # if the other edge has acknowledged the connection as done, delete it
-    if doc.to_dict().get("state") != "done":
+    if doc.to_dict().get("state") == "connected":
         doc_ref.update({"state": "done"})
     else:
         doc_ref.delete()
+
+@app.post("/send_image/{connection_id}")
+async def send_image(
+    connection_id: Annotated[str, Path()],
+    connection_info: Annotated[tuple, Depends(get_connection)],
+    image: Annotated[bytes, File()]
+):
+    _, doc = connection_info
+    doc = doc.to_dict()
+
+    if doc.get("state") == "new":
+        raise HTTPException(status_code=400, detail="Connection not established")
+    elif doc.get("state") == "done":
+        raise HTTPException(status_code=400, detail="Connection already ended")
+
+    blob = bucket.blob(f"{connection_id}/{uuid.uuid4()}")
+    blob.upload_from_string(image)
+
+@app.post("/receive_images/{connection_id}")
+async def receive_images(
+    connection_id: Annotated[str, Path()],
+    connection_info: Annotated[tuple, Depends(get_connection)],
+):
+    _, doc = connection_info
+    doc = doc.to_dict()
+
+    if doc.get("state") == "new":
+        raise HTTPException(status_code=400, detail="Connection not established")
+    elif doc.get("state") == "done":
+        raise HTTPException(status_code=400, detail="Connection already ended")
+
+    response_headers = {
+        "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+
+    return StreamingResponse(pack_images_zip(connection_id), media_type="application/zip", headers=response_headers)
+
+def pack_images_zip(connection_id: str) -> Iterator[bytes]:
+    with BytesIO() as zip_buffer:
+        with zipfile.ZipFile(zip_buffer, mode="w") as zip_file:
+            for blob in sorted(bucket.list_blobs(prefix=connection_id), key=lambda b: b.time_created):
+                name = blob.name.split("/")[-1]
+                data = blob.download_as_bytes()
+                zip_file.writestr(name, data)
+                blob.delete()
+
+        zip_buffer.seek(0)
+        yield from zip_buffer
