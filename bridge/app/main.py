@@ -16,7 +16,7 @@ import zipfile
     # - ends the connection with the given UUID, ran from the mobile app
 
 from io import BytesIO
-from fastapi import FastAPI, HTTPException, Depends, Path, File, UploadFile, status
+from fastapi import FastAPI, HTTPException, Depends, Path, File, UploadFile, Response, status
 from fastapi.responses import StreamingResponse
 from google.cloud import storage, firestore
 import uuid
@@ -73,7 +73,10 @@ async def end_connection(
     if doc.to_dict().get("state") == "connected":
         doc_ref.update({"state": "done"})
     else:
+        # delete the connection document and all associated blobs
         doc_ref.delete()
+        for blob in bucket.list_blobs(prefix=connection_id):
+            blob.delete()
 
 @app.post("/send_image/{connection_id}", status_code=204)
 async def send_image(
@@ -89,13 +92,13 @@ async def send_image(
     elif doc.get("state") == "done":
         raise HTTPException(status_code=400, detail="Connection already ended")
 
-    if not image:
+    if not image or image.size == 0:
         raise HTTPException(status_code=400, detail="No image provided")
 
     image_bytes = await image.read()
     image_uuid = uuid.uuid4()
 
-    blob = bucket.blob(f"{connection_id}/{image_uuid}")
+    blob = bucket.blob(f"{connection_id}/{image_uuid}.jpg")
     blob.upload_from_string(image_bytes, content_type="image/jpeg")
 
 @app.post("/receive_images/{connection_id}")
@@ -117,7 +120,7 @@ async def receive_images(
         break
 
     if not images_exist:
-        return status.HTTP_204_NO_CONTENT
+        return Response(status.HTTP_204_NO_CONTENT)
 
     response_headers = {
         "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
