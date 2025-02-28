@@ -33,4 +33,4 @@ jobs:
           service: display-organizer
           source: ./bridge
           region: us-central1
-          vpc_connector: display-organizer
+          flags: --vpc-connector=display-organizer
