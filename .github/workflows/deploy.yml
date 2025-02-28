@@ -27,10 +27,18 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Build Docker image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest ./bridge
+
+      - name: Push Docker image to Google Container Registry
+        run: |
+          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest
+
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: display-organizer
-          source: ./bridge
+          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest
           region: us-central1
-          flags: --vpc-connector=display-organizer --entry-point "gunicorn app.main:app"
+          flags: --vpc-connector=display-organizer
