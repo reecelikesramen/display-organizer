@@ -16,7 +16,7 @@ import zipfile
     # - ends the connection with the given UUID, ran from the mobile app
 
 from io import BytesIO
-from fastapi import FastAPI, HTTPException, Depends, Path, File
+from fastapi import FastAPI, HTTPException, Depends, Path, File, UploadFile, status
 from fastapi.responses import StreamingResponse
 from google.cloud import storage, firestore
 import uuid
@@ -75,11 +75,11 @@ async def end_connection(
     else:
         doc_ref.delete()
 
-@app.post("/send_image/{connection_id}")
+@app.post("/send_image/{connection_id}", status_code=204)
 async def send_image(
     connection_id: Annotated[str, Path()],
     connection_info: Annotated[tuple, Depends(get_connection)],
-    image: Annotated[bytes, File()]
+    image: UploadFile = File(media_type="image/jpeg", description="The JPEG image to send from the mobile app.")
 ):
     _, doc = connection_info
     doc = doc.to_dict()
@@ -89,8 +89,14 @@ async def send_image(
     elif doc.get("state") == "done":
         raise HTTPException(status_code=400, detail="Connection already ended")
 
-    blob = bucket.blob(f"{connection_id}/{uuid.uuid4()}")
-    blob.upload_from_string(image)
+    if not image:
+        raise HTTPException(status_code=400, detail="No image provided")
+
+    image_bytes = await image.read()
+    image_uuid = uuid.uuid4()
+
+    blob = bucket.blob(f"{connection_id}/{image_uuid}")
+    blob.upload_from_string(image_bytes, content_type="image/jpeg")
 
 @app.post("/receive_images/{connection_id}")
 async def receive_images(
@@ -104,6 +110,14 @@ async def receive_images(
         raise HTTPException(status_code=400, detail="Connection not established")
     elif doc.get("state") == "done":
         raise HTTPException(status_code=400, detail="Connection already ended")
+
+    images_exist = False
+    for blob in bucket.list_blobs(prefix=connection_id):
+        images_exist = True
+        break
+
+    if not images_exist:
+        return status.HTTP_204_NO_CONTENT
 
     response_headers = {
         "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
