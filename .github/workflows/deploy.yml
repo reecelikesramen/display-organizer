@@ -33,4 +33,4 @@ jobs:
           service: display-organizer
           source: ./bridge
           region: us-central1
-          flags: --vpc-connector=display-organizer
+          flags: --vpc-connector=display-organizer --entry-point "gunicorn app.main:app"
