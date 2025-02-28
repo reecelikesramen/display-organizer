@@ -120,7 +120,7 @@ async def receive_images(
         break
 
     if not images_exist:
-        return Response(status.HTTP_204_NO_CONTENT)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     response_headers = {
         "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
