@@ -136,7 +136,7 @@ async def end_connection(
         doc_ref.update({"state": "done"})
     else:
         # XXX: Keep 100% of previous data for analysis and improvement right now
-        dest = db.collection("data_collection").document(doc_ref.path)
+        dest = db.collection("data_collection").document(doc_ref.id)
         dest.set(doc.to_dict())
         for blob in bucket.list_blobs(prefix=connection_id):
             bucket.rename_blob(blob, "data_collection/" + blob.name)
