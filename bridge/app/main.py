@@ -209,9 +209,41 @@ async def dequeue_images(
     _, doc = connection_info
     doc = doc.to_dict()
 
-    def pack_images_zip() -> Iterator[bytes]:
-        logging.info(f"Starting pack_images_zip for {connection_id}/{state}")
-        blob_count = 0
+    if doc.get("state") == "new":
+        raise HTTPException(status_code=400, detail="Connection not established")
+    if doc.get("state") == "done":
+        raise HTTPException(status_code=400, detail="Connection already ended")
+    if state not in ("calibrating", "organizing"):
+        raise HTTPException(
+            status_code=400,
+            detail="Image queue is only available for calibrating or organizing state",
+        )
+
+    images_exist = False
+    if bucket.list_blobs(prefix=f"{connection_id}/{state}").pages:
+        images_exist = True
+
+    if not images_exist:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    response_headers = {
+        "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
+    return StreamingResponse(
+        pack_images_zip(connection_id, state),
+        media_type="application/zip",
+        headers=response_headers,
+    )
+
+
+def pack_images_zip(connection_id: str, state: str) -> Iterator[bytes]:
+    logging.info(f"Starting pack_images_zip for {connection_id}/{state}")
+    blob_count = 0
+    try:
         with BytesIO() as zip_buffer:
             with zipfile.ZipFile(zip_buffer, mode="w") as zip_file:
                 for blob in sorted(
@@ -233,35 +265,9 @@ async def dequeue_images(
 
                 logging.info(f"Processed {blob_count} blobs.")
 
-        zip_buffer.seek(0)
+            zip_buffer.seek(0)
 
-        logging.info(f"Finished pack_images_zip for {connection_id}/{state}")
-        yield from zip_buffer
-
-    if doc.get("state") == "new":
-        raise HTTPException(status_code=400, detail="Connection not established")
-    if doc.get("state") == "done":
-        raise HTTPException(status_code=400, detail="Connection already ended")
-    if state not in ("calibrating", "organizing"):
-        raise HTTPException(
-            status_code=400,
-            detail="Image queue is only available for calibrating or organizing state",
-        )
-
-    images_exist = False
-    if next(bucket.list_blobs(prefix=f"{connection_id}/{state}")):
-        images_exist = True
-
-    if not images_exist:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    response_headers = {
-        "Content-Disposition": f"attachment; filename=images_{connection_id}.zip",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
-    }
-
-    return StreamingResponse(
-        pack_images_zip(), media_type="application/zip", headers=response_headers
-    )
+            logging.info(f"Finished pack_images_zip for {connection_id}/{state}")
+            yield from zip_buffer
+    except Exception as e:
+        logging.error(f"Error building zip file: {e}")
