@@ -17,6 +17,7 @@
 # STATES: new | connected | calibrating | organizing | done
 
 from io import BytesIO
+import logging
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -209,33 +210,47 @@ async def dequeue_images(
     doc = doc.to_dict()
 
     def pack_images_zip() -> Iterator[bytes]:
+        logging.info(f"Starting pack_images_zip for {connection_id}/{state}")
+        blob_count = 0
         with BytesIO() as zip_buffer:
             with zipfile.ZipFile(zip_buffer, mode="w") as zip_file:
                 for blob in sorted(
                     bucket.list_blobs(prefix=f"{connection_id}/{state}"),
                     key=lambda b: b.time_created,
                 ):
+                    blob_count += 1
                     name = blob.name.split("/")[-1]
-                    data = blob.download_as_bytes()
-                    zip_file.writestr(name, data)
+                    try:
+                        data = blob.download_as_bytes()
+                        logging.info(f"Downloaded blob: {name}, size: {len(data)}")
+                        zip_file.writestr(name, data)
+                        # XXX: Keeping 100% of previous data for analysis and improvement right now
+                        bucket.rename_blob(blob, "data_collection/" + blob.name)
+                        # TODO: delete 80-90% of previous data after we go live
+                        # blob.delete()
+                    except Exception as e:
+                        logging.error(f"Error processing blob {name}: {e}")
 
-                    # XXX: Keeping 100% of previous data for analysis and improvement right now
-                    bucket.rename_blob(blob, "data_collection/" + blob.name)
-                    # TODO: delete 80-90% of previous data after we go live
-                    # blob.delete()
+                logging.info(f"Processed {blob_count} blobs.")
 
         zip_buffer.seek(0)
+
+        logging.info(f"Finished pack_images_zip for {connection_id}/{state}")
         yield from zip_buffer
 
     if doc.get("state") == "new":
         raise HTTPException(status_code=400, detail="Connection not established")
-    elif doc.get("state") == "done":
+    if doc.get("state") == "done":
         raise HTTPException(status_code=400, detail="Connection already ended")
+    if state not in ("calibrating", "organizing"):
+        raise HTTPException(
+            status_code=400,
+            detail="Image queue is only available for calibrating or organizing state",
+        )
 
     images_exist = False
-    for _ in bucket.list_blobs(prefix=connection_id):
+    if next(bucket.list_blobs(prefix=f"{connection_id}/{state}")):
         images_exist = True
-        break
 
     if not images_exist:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
