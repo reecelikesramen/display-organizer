@@ -17,29 +17,46 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Add repository to git safe directories
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Filter changes for relevant files
+        id: filter
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            api_change:
+              - 'bridge/**'
+
       - name: Authenticate to Google Cloud
+        if: steps.filter.outputs.api_change == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
+        if: steps.filter.outputs.api_change == 'true'
         uses: google-github-actions/setup-gcloud@v1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Authenticate Docker to Google Cloud
+        if: steps.filter.outputs.api_change == 'true'
         run: |
           gcloud auth configure-docker gcr.io --quiet
 
       - name: Build Docker image
+        if: steps.filter.outputs.api_change == 'true'
         run: |
           docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest ./bridge
 
       - name: Push Docker image to Google Container Registry
+        if: steps.filter.outputs.api_change == 'true'
         run: |
           docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/display-organizer:latest
 
       - name: Deploy to Cloud Run
+        if: steps.filter.outputs.api_change == 'true'
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: display-organizer
