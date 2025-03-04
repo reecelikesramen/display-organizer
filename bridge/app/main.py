@@ -101,7 +101,7 @@ async def get_connection_state(
     return {"state": doc.to_dict().get("state")}
 
 
-@app.post("/connection_state/{connection_id}")
+@app.post("/connection_state/{connection_id}", status_code=204)
 async def set_connection_state(
     connection_id: Annotated[str, Path()],
     connection_info: Annotated[tuple, Depends(get_connection)],
@@ -121,6 +121,8 @@ async def set_connection_state(
             status_code=400,
             detail=f"Could not change connection state from {state_from_to[0]} to {state_from_to[1]} for Connection ID {connection_id}",
         )
+
+    doc_ref.update({"state": state})
 
 
 @app.post("/end_connection/{connection_id}", status_code=204)
