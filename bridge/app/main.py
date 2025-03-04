@@ -219,11 +219,10 @@ async def dequeue_images(
             detail="Image queue is only available for calibrating or organizing state",
         )
 
-    images_exist = False
-    if bucket.list_blobs(prefix=f"{connection_id}/{state}").pages:
-        images_exist = True
-
-    if not images_exist:
+    # return no content of no blobs with this prefix instead of sending an empty zip
+    if not next(
+        bucket.list_blobs(prefix=f"{connection_id}/{state}", max_results=1), None
+    ):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     response_headers = {
