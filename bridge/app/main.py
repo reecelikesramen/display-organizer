@@ -175,6 +175,13 @@ async def enqueue_image(
     elif current_state == "done":
         raise HTTPException(status_code=400, detail="Connection already ended")
 
+    if state not in ("calibrating", "organizing"):
+        raise HTTPException(
+            status_code=400,
+            detail="Can only enqueue images in calibrating or organizing state",
+        )
+
+    # XXX: maybe make this a bit more selective
     if current_state != state:
         return {"directive": "next_state"}
 
