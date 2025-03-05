@@ -24,21 +24,23 @@ def make_chessboard_img(chessboard_width_px: int) -> np.ndarray:
 
     SQUARE_SIZE_PX = chessboard_width_px / cols
 
-    chessboard_height_px = rows * SQUARE_SIZE_PX
-    board_img = np.zeroes(
-        (chessboard_height_px, chessboard_width_px, 3), dtype=np.uint8
-    )
+    chessboard_height_px = int(rows * SQUARE_SIZE_PX)
+    board_img = np.zeros((chessboard_height_px, chessboard_width_px, 3), dtype=np.uint8)
 
     for i, j in product(range(rows), range(cols)):
-        x = j * SQUARE_SIZE_PX
-        y = i * SQUARE_SIZE_PX
+        x = int(j * SQUARE_SIZE_PX)
+        y = int(i * SQUARE_SIZE_PX)
 
         # black or white square
-        color = (0, 0, 0) if i + j % 2 == 0 else (255, 255, 255)
+        color = (0, 0, 0) if (i + j) % 2 == 0 else (255, 255, 255)
 
         # draw square in image
         cv2.rectangle(
-            board_img, (x, y), (x + SQUARE_SIZE_PX, y + SQUARE_SIZE_PX), color, -1
+            board_img,
+            (x, y),
+            (x + int(SQUARE_SIZE_PX), y + int(SQUARE_SIZE_PX)),
+            color,
+            -1,
         )
 
     return board_img

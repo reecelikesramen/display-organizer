@@ -1,147 +1,15 @@
 import sys
-import uuid
-import json
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
-from PyQt6.QtGui import QPixmap, QImage, QGuiApplication
-from PyQt6.QtCore import Qt, QSize, QRect, QPointF
-import cv2
-import qrcode
-import numpy as np
-
-def generate_aruco_marker(marker_id, marker_size=200):
-    """Generates an ArUco marker image."""
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    marker_image = cv2.aruco.generateImageMarker(dictionary, marker_id, marker_size)
-    # Convert grayscale image to RGB
-    marker_image_rgb = cv2.cvtColor(marker_image, cv2.COLOR_GRAY2RGB)
-    return marker_image_rgb
-
-def generate_qr_code(data, qr_size):
-    """Generates a QR code image."""
-    qr = qrcode.QRCode(
-        version=None,  # Auto-determine version based on data size
-        error_correction=qrcode.constants.ERROR_CORRECT_M,  # Medium error correction
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    img = img.resize((qr_size, qr_size))
-    return np.array(img.convert("RGB"))
-
-def display_on_all_screens(uuid):
-    """Displays ArUco markers and QR codes on all screens."""
-    app = QApplication(sys.argv)
-
-    # Create and show windows for each screen
-    windows = []
-    for i, screen in enumerate(QGuiApplication.screens()):
-
-        # Create window for this screen
-        window = QWidget()
-        window.setWindowTitle(f"Display {i + 1}")
-        window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
-        window.setWindowFlag(Qt.WindowType.FramelessWindowHint)
-        window.setGeometry(screen.geometry())
-
-        top_inset = screen.availableGeometry().top() - screen.geometry().top()
-        if top_inset < 30:
-            top_inset = 0
-
-        print(top_inset)
-
-        # Get screen dimensions
-        screen_width = screen.geometry().width()
-        screen_height = screen.geometry().height() - top_inset
-
-        # Create a layout
-        layout = QVBoxLayout(window)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Generate ArUco Markers (ensure unique IDs across all screens)
-        aruco_size = 100  # Adjust size based on screen
-        # TL, TR, BR, BL
-        aruco_top_left = generate_aruco_marker(i * 4, aruco_size)
-        aruco_top_right = generate_aruco_marker(i * 4 + 1, aruco_size)
-        aruco_bottom_right = generate_aruco_marker(i * 4 + 2, aruco_size)
-        aruco_bottom_left = generate_aruco_marker(i * 4 + 3, aruco_size)
+import time
+from typing import Optional
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from screens import CalibrationScreen, OrganizationScreen, QRCodeScreen
 
 
-        # Create background image
-        combined_image = np.ones((screen_height, screen_width, 3), dtype=np.uint8) * 255  # White background
-
-        # Place ArUco Markers in corners with some padding
-        padding = aruco_size // 10
-
-        # Top left
-        h, w = aruco_top_left.shape[:2]
-        combined_image[padding:padding+h, padding:padding+w] = aruco_top_left
-
-        # Top right
-        h, w = aruco_top_right.shape[:2]
-        combined_image[padding:padding+h, screen_width-padding-w:screen_width-padding] = aruco_top_right
-
-        # Bottom left
-        h, w = aruco_bottom_left.shape[:2]
-        combined_image[screen_height-padding-h:screen_height-padding, padding:padding+w] = aruco_bottom_left
-
-        # Bottom right
-        h, w = aruco_bottom_right.shape[:2]
-        combined_image[screen_height-padding-h:screen_height-padding, screen_width-padding-w:screen_width-padding] = aruco_bottom_right
-
-        # Place QR code in center of primary screen only
-        if screen == QGuiApplication.primaryScreen():
-            # Generate QR Code
-            qr_size = int(min(screen_width, screen_height) // 2)  # Adjust size based on screen
-            qr_code_image = generate_qr_code(uuid, qr_size)
-
-            # Place QR Code in center
-            h, w = qr_code_image.shape[:2]
-            qr_x = (screen_width - w) // 2
-            qr_y = (screen_height - h) // 2
-            combined_image[qr_y:qr_y+h, qr_x:qr_x+w] = qr_code_image
-
-        # Convert to QPixmap
-        height, width, channel = combined_image.shape
-        bytes_per_line = 3 * width
-        q_image = QImage(combined_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(q_image)
-
-        # Display Image
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
-
-        # Store window for showing later
-        windows.append(window)
-
-    # Show all windows
-    for window in windows:
-        window.showFullScreen()
-
-    # Add keyboard shortcut to quit (Escape key)
-    for window in windows:
-        window.keyPressEvent = lambda event: app.quit() if event.key() == Qt.Key.Key_Escape else None
-
-    screens = QGuiApplication.screens()
-
-    app.exec()
-
-    return get_screen_info(screens)
-
-def get_screen_info(screens):
-    screen_info = []
-    for i, screen in enumerate(screens):
-        # Gather screen information
-        physical_size = screen.physicalSize()
-        physical_width_mm = physical_size.width()
-        physical_height_mm = physical_size.height()
-
+def print_screen_info(app: QApplication) -> None:
+    for screen in app.screens():
         # Create display information dictionary
         display_info = {
-            "screenIndex": i,
             "screenName": screen.name(),
             "manufacturer": screen.manufacturer(),
             "model": screen.model(),
@@ -153,44 +21,93 @@ def get_screen_info(screens):
                 "height": screen.geometry().height(),
             },
             "physicalSize": {
-                "width": physical_width_mm,
-                "height": physical_height_mm
+                "width": screen.physicalSize().width(),
+                "height": screen.physicalSize().height(),
             },
             "physicalDPI": screen.physicalDotsPerInch(),
             "logicalDPI": screen.logicalDotsPerInch(),
             "refreshRate": screen.refreshRate(),
             "depth": screen.depth(),
-            "devicePixelRatio": screen.devicePixelRatio()
+            "devicePixelRatio": screen.devicePixelRatio(),
         }
+        print(display_info)
 
-        screen_info.append(display_info)
 
-        # Print display info for debugging
-        print(f"\nScreen {i+1} Info:")
-        print(json.dumps(display_info, indent=2, default=serialize_qt_objects))
+class App(QObject):
+    qrcode_screen: Optional[QRCodeScreen] = None
+    calibration_screen: Optional[CalibrationScreen] = None
+    organization_screen: Optional[OrganizationScreen] = None
 
-    return screen_info
+    def __init__(self):
+        super().__init__()
+        self.app = QApplication(sys.argv)
+        self.thread = QThread()
+        self.worker = MainWorker()
 
-def serialize_qt_objects(obj):
-    """Convert Qt objects to serializable types."""
-    if isinstance(obj, QSize):
-        return {"width": obj.width(), "height": obj.height()}
-    elif isinstance(obj, QRect):
-        return {"x": obj.x(), "y": obj.y(), "width": obj.width(), "height": obj.height()}
-    elif isinstance(obj, QPointF):
-        return {"x": obj.x(), "y": obj.y()}
-    return str(obj)
+        self.worker.open_qrcode_screen.connect(self.open_qrcode_screen)
+        self.worker.close_qrcode_screen.connect(self.close_qrcode_screen)
+        self.worker.open_calibration_screen.connect(self.open_calibration_screen)
+        self.worker.close_calibration_screen.connect(self.close_calibration_screen)
+        self.worker.open_organization_screen.connect(self.open_organization_screen)
+        self.worker.close_organization_screen.connect(self.close_organization_screen)
+        self.worker.exit_app.connect(self.exit)
+
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.thread.start()
+
+    def open_qrcode_screen(self, connection_id: str) -> None:
+        qrcode_screen = QRCodeScreen(self.app, connection_id)
+        qrcode_screen.show()
+        self.qrcode_screen = qrcode_screen
+
+    def close_qrcode_screen(self) -> None:
+        self.qrcode_screen.close()
+
+    def open_calibration_screen(self) -> None:
+        calibration_screen = CalibrationScreen(self.app)
+        calibration_screen.showFullScreen()
+        self.calibration_screen = calibration_screen
+
+    def close_calibration_screen(self) -> None:
+        self.calibration_screen.close()
+
+    def open_organization_screen(self) -> None:
+        organization_screen = OrganizationScreen(self.app)
+        organization_screen.show()
+        self.organization_screen = organization_screen
+
+    def close_organization_screen(self) -> None:
+        self.organization_screen.close_windows()
+
+    def start(self):
+        self.app.exec()
+
+    def exit(self):
+        self.app.quit()
+
+
+class MainWorker(QObject):
+    open_qrcode_screen = pyqtSignal(str)
+    close_qrcode_screen = pyqtSignal()
+    open_calibration_screen = pyqtSignal()
+    close_calibration_screen = pyqtSignal()
+    open_organization_screen = pyqtSignal()
+    close_organization_screen = pyqtSignal()
+    exit_app = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        print("hello")
+
+    def run(self):
+        print("in the thread!")
+        self.open_qrcode_screen.emit("test_qr_code")
+        time.sleep(2)
+        self.close_qrcode_screen.emit()
+        self.exit_app.emit()
+
 
 if __name__ == "__main__":
-    # INFO: to get screen for ARUco marker, just divide the marker id by 4
-
-    # XXX: ask API for UUID
-    uuid = uuid.uuid4() # temporary
-
-    # XXX: display all screens with QR code of UUID
-    print(f"Display UUID: {uuid}")
-    screen_info = display_on_all_screens(uuid)
-
-    # XXX: await mobile response of image(s) or stream
-
-    # XXX: calculate based on data received from mobile device
+    app = App()
+    app.start()
