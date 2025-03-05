@@ -9,10 +9,12 @@ import {
   useCameraPermissions,
 } from "expo-camera";
 import { useNetworkState } from "expo-network";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View, Text, Modal } from "react-native";
 import tinycolor from "tinycolor2";
-import uuidV4Regex from "@/constants/UUID4Regex";
+import connectionIDRegex from "@/constants/ConnectionIDRegex";
+import * as api from "@/api";
+import { ConnectionState } from "@/api/model";
 
 export default function Index() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -20,8 +22,9 @@ export default function Index() {
   const [facing, setFacing] = useState<CameraType>("back");
   const [hasRequested, setHasRequested] = useState(false); //track if permissions have been requested
   const networkState = useNetworkState();
-  const scanningQR = useRef(true);
-  const [uuid, setUuid] = useState<string | null>(null);
+  const [scanningQR, setScanningQR] = useState(true);
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [appState, setAppState] = useState<ConnectionState>("new");
 
   useEffect(() => {
     if (permission && !permission.granted && !hasRequested) {
@@ -29,6 +32,64 @@ export default function Index() {
       setHasRequested(true);
     }
   }, [permission, requestPermission, hasRequested]);
+
+  useEffect(() => {
+    if (connectionId) {
+      console.log("Connection ID:", connectionId);
+      api.joinConnection(connectionId);
+      setAppState("connected");
+    }
+  }, [connectionId]);
+
+  useEffect(() => {
+    if (appState === "connected") {
+      console.log("Connected");
+      const interval = setInterval(async () => {
+        const state = await api.getConnectionState(connectionId!);
+        if (state === "calibrating") {
+          setAppState("calibrating");
+          clearInterval(interval);
+        }
+      }, 500);
+    } else if (appState === "calibrating") {
+      console.log("Calibrating");
+      const interval = setInterval(async () => {
+        const picture = await cameraRef.current?.takePictureAsync({
+          base64: true,
+          fastMode: true,
+          quality: 0.2,
+          skipProcessing: false, // TODO look into
+          shutterSound: false,
+          imageType: "jpg",
+          exif: true,
+        });
+        if (!picture) {
+          console.error("Failed to take picture");
+        }
+
+        // api.sendImage(connectionId!, "calibrating", picture!.base64!);
+        // if (state === "calibrating") {
+        //   setAppState("calibrating");
+        //   clearInterval(interval);
+        // }
+      }, 1000);
+    }
+  }, [appState]);
+
+  const handleQRCodeScanned = useCallback(
+    (result: BarcodeScanningResult) => {
+      if (!scanningQR || result.type !== "qr" || !result.data) {
+        return;
+      }
+
+      const match = result.data.match(connectionIDRegex);
+      if (match) {
+        setConnectionId(match[1]);
+        setScanningQR(false);
+      }
+    },
+    [scanningQR],
+  );
 
   if (!permission) {
     return null;
@@ -44,18 +105,6 @@ export default function Index() {
 
   const toggleFacing = () => {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
-  };
-
-  const handleQRCodeScanned = (result: BarcodeScanningResult) => {
-    if (!scanningQR.current || result.type !== "qr" || !result.data) {
-      return;
-    }
-
-    if (uuidV4Regex.test(result.data)) {
-      setUuid(result.data);
-      scanningQR.current = false;
-      console.log("UUID scanned:", result.data);
-    }
   };
 
   return (

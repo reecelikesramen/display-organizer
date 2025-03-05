@@ -68,6 +68,9 @@ def get_images(connection_id: str, state: str) -> list[np.ndarray]:
     )
     response.raise_for_status()
 
+    if response.status_code == 204:
+        return []
+
     images = []
     with zipfile.ZipFile(BytesIO(response.content)) as zip:
         for fname in zip.namelist():

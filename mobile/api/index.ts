@@ -8,13 +8,12 @@ import {
   SendImageDirective,
   sendImageResponse,
 } from "./model";
-import { ZodError } from "zod";
 
 const HEADERS = new Headers();
 HEADERS.append("Accept", "application/json");
 HEADERS.append("Authorization", `bearer ${AUTH_TOKEN}`);
 
-export async function joinConnection(connection_id: string): Promise<void> {
+export async function joinConnection(connectionId: string): Promise<void> {
   const requestOptions = {
     method: "POST",
     headers: HEADERS,
@@ -22,7 +21,7 @@ export async function joinConnection(connection_id: string): Promise<void> {
   } satisfies RequestInit;
 
   const response = await fetch(
-    `${API_BASE_URL}/join_connection/${connection_id}`,
+    `${API_BASE_URL}/join_connection/${connectionId}`,
     requestOptions,
   );
 
@@ -32,7 +31,7 @@ export async function joinConnection(connection_id: string): Promise<void> {
 }
 
 export async function getConnectionState(
-  connection_id: string,
+  connectionId: string,
 ): Promise<ConnectionState> {
   const requestOptions = {
     method: "GET",
@@ -41,7 +40,7 @@ export async function getConnectionState(
   } satisfies RequestInit;
 
   const response = await fetch(
-    `${API_BASE_URL}/connection_state/${connection_id}`,
+    `${API_BASE_URL}/connection_state/${connectionId}`,
     requestOptions,
   );
 
@@ -59,7 +58,7 @@ export async function getConnectionState(
   return result.data.state;
 }
 
-export async function endConnection(connection_id: string): Promise<void> {
+export async function endConnection(connectionId: string): Promise<void> {
   const requestOptions = {
     method: "POST",
     headers: HEADERS,
@@ -67,7 +66,7 @@ export async function endConnection(connection_id: string): Promise<void> {
   } satisfies RequestInit;
 
   const response = await fetch(
-    `${API_BASE_URL}/end_connection/${connection_id}`,
+    `${API_BASE_URL}/end_connection/${connectionId}`,
     requestOptions,
   );
 
@@ -77,7 +76,7 @@ export async function endConnection(connection_id: string): Promise<void> {
 }
 
 export async function sendImage(
-  connection_id: string,
+  connectionId: string,
   state: ConnectionState,
   image: Base64Image,
 ): Promise<SendImageDirective> {
@@ -94,7 +93,7 @@ export async function sendImage(
   } satisfies RequestInit;
 
   const response = await fetch(
-    `${API_BASE_URL}/image_queue/${connection_id}?state=${state}`,
+    `${API_BASE_URL}/image_queue/${connectionId}?state=${state}`,
     requestOptions,
   );
 
