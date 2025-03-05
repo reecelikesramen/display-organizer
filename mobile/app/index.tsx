@@ -15,6 +15,7 @@ import tinycolor from "tinycolor2";
 import connectionIDRegex from "@/constants/ConnectionIDRegex";
 import * as api from "@/api";
 import { ConnectionState } from "@/api/model";
+import { useAppVisible } from "@/hooks/useAppVisible";
 
 export default function Index() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -25,6 +26,7 @@ export default function Index() {
   const [scanningQR, setScanningQR] = useState(true);
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [appState, setAppState] = useState<ConnectionState>("new");
+  const isAppVisible = useAppVisible();
 
   useEffect(() => {
     if (permission && !permission.granted && !hasRequested) {
@@ -42,8 +44,9 @@ export default function Index() {
   }, [connectionId]);
 
   useEffect(() => {
-    if (appState === "connected") {
-      console.log("Connected");
+    console.log(`App State: ${appState}`);
+    if (appState === "new") {
+    } else if (appState === "connected") {
       const interval = setInterval(async () => {
         const state = await api.getConnectionState(connectionId!);
         if (state === "calibrating") {
@@ -52,29 +55,49 @@ export default function Index() {
         }
       }, 500);
     } else if (appState === "calibrating") {
-      console.log("Calibrating");
       const interval = setInterval(async () => {
         const picture = await cameraRef.current?.takePictureAsync({
           base64: true,
-          fastMode: true,
+          // fastMode: true,
           quality: 0.2,
-          skipProcessing: false, // TODO look into
-          shutterSound: false,
+          // skipProcessing: false, // TODO look into
+          // shutterSound: false,
           imageType: "jpg",
-          exif: true,
+          // exif: true,
         });
         if (!picture) {
           console.error("Failed to take picture");
         }
 
-        // api.sendImage(connectionId!, "calibrating", picture!.base64!);
-        // if (state === "calibrating") {
-        //   setAppState("calibrating");
-        //   clearInterval(interval);
-        // }
-      }, 1000);
+        const directive = await api.sendImage(
+          connectionId!,
+          "calibrating",
+          picture!.base64!,
+        );
+        if (directive === "next_state") {
+          setAppState("organizing");
+          clearInterval(interval);
+        }
+      }, 1500);
+    } else if (appState === "organizing") {
     }
   }, [appState]);
+
+  useEffect(() => {
+    console.log(`App Visible: ${isAppVisible}`);
+    if (!isAppVisible) {
+      if (connectionId) {
+        api.endConnection(connectionId!);
+        setConnectionId(null);
+        setScanningQR(true);
+        setAppState("new");
+      }
+    }
+  }, [isAppVisible]);
+
+  useEffect(() => {
+    console.log(`Scanning QR: ${scanningQR}`);
+  }, [scanningQR]);
 
   const handleQRCodeScanned = useCallback(
     (result: BarcodeScanningResult) => {
@@ -114,6 +137,10 @@ export default function Index() {
       mode={"picture"}
       facing={facing}
       onBarcodeScanned={handleQRCodeScanned}
+      animateShutter={false}
+      barcodeScannerSettings={{
+        barcodeTypes: ["qr"],
+      }}
     >
       <Modal
         animationType="fade"

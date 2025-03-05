@@ -31,13 +31,16 @@ def qr_code_cli(connection_id: str):
 
 
 class QRCodeScreen(QWidget):
-    window_closed = pyqtSignal()
+    screen_close_requested = pyqtSignal()
 
     def __init__(
         self, app: QApplication, connection_id: str, fullscreen=False
-    ) -> QWidget:
+    ):
         super().__init__()
         screen = app.primaryScreen()
+
+        if not screen:
+            raise ValueError("No primary screen found")
 
         self.setWindowTitle("Display Organizer")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
@@ -78,19 +81,21 @@ class QRCodeScreen(QWidget):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
 
-    def keyPressEvent(self, event):
-        super().keyPressEvent(event)
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
-            self.window_closed.emit()
+    def keyPressEvent(self, a0):
+        super().keyPressEvent(a0)
+        if a0 and a0.key() == Qt.Key.Key_Escape:
+            self.screen_close_requested.emit()
 
 
 class CalibrationScreen(QWidget):
-    window_closed = pyqtSignal()
+    screen_close_requested = pyqtSignal()
 
     def __init__(self, app: QApplication):
         super().__init__()
         screen = app.primaryScreen()
+
+        if not screen:
+            raise ValueError("No primary screen found")
 
         self.setWindowTitle("Display Organizer")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
@@ -147,14 +152,15 @@ class CalibrationScreen(QWidget):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
 
-    def keyPressEvent(self, event):
-        super().keyPressEvent(event)
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
-            self.window_closed.emit()
+    def keyPressEvent(self, a0):
+        super().keyPressEvent(a0)
+        if a0 and a0.key() == Qt.Key.Key_Escape:
+            self.screen_close_requested.emit()
 
 
 class OrganizationScreen(QObject):
+    screen_close_requested = pyqtSignal()
+
     def __init__(
         self,
         app: QApplication,
@@ -224,8 +230,8 @@ class OrganizationScreen(QObject):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
 
-        window.keyPressEvent = lambda event: (
-            self.close_windows() if event.key() == Qt.Key.Key_Escape else None
+        window.keyPressEvent = lambda a0: (
+            self.screen_close_requested.emit() if a0 and a0.key() == Qt.Key.Key_Escape else None
         )
 
         return window
@@ -234,7 +240,7 @@ class OrganizationScreen(QObject):
         for window in self._windows:
             window.showFullScreen()
 
-    def close_windows(self):
+    def close(self):
         for window in self._windows:
             window.close()
 

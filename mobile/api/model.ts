@@ -19,6 +19,3 @@ export type SendImageDirective = z.infer<typeof sendImageDirective>;
 export const sendImageResponse = z.object({
   directive: sendImageDirective,
 });
-
-export const base64Image = z.string().regex(/^data:image\/(jpeg|jpg);base64,/);
-export type Base64Image = z.infer<typeof base64Image>;
