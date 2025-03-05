@@ -17,6 +17,7 @@
 # STATES: new | connected | calibrating | organizing | done
 
 from io import BytesIO
+import base64
 import logging
 from fastapi import (
     FastAPI,
@@ -28,11 +29,13 @@ from fastapi import (
     UploadFile,
     Response,
     status,
+    Form
 )
 from fastapi.responses import StreamingResponse
 from google.cloud import storage, firestore
 import uuid
-from typing import Annotated, Iterator
+from typing import Annotated, Iterator, Optional, Union
+from pydantic import BaseModel
 import zipfile
 
 storage_client = storage.Client()
@@ -152,6 +155,11 @@ async def end_connection(
         #     blob.delete()
 
 
+class ImageUpload(BaseModel):
+    image_base64: Optional[str] = None
+    image_file: Optional[UploadFile] = File(None, media_type="image/jpeg")
+
+
 @app.post("/image_queue/{connection_id}")
 async def enqueue_image(
     connection_id: Annotated[str, Path()],
@@ -159,10 +167,7 @@ async def enqueue_image(
     state: Annotated[
         str, Query(description="The state to associate this image upload with.")
     ],
-    image: UploadFile = File(
-        media_type="image/jpeg",
-        description="The JPEG image to send from the mobile app.",
-    ),
+    image: Annotated[ImageUpload, Form(description="The JPEG image to send from the mobile app.")]
 ):
     _, doc = connection_info
     current_state = doc.to_dict().get("state")
@@ -186,10 +191,18 @@ async def enqueue_image(
     if current_state != state:
         return {"directive": "next_state"}
 
-    if not image or image.size == 0:
+    if not image or ((not image.image_file or image.image_file.size == 0) and not image.image_base64):
         raise HTTPException(status_code=400, detail="No image provided")
 
-    image_bytes = await image.read()
+    image_bytes = None
+    if image.image_base64:
+        try:
+            image_bytes = base64.b64decode(image.image_base64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data") from e
+    elif image.image_file:
+        image_bytes = await image.image_file.read()
+
     image_uuid = uuid.uuid4()
 
     blob = bucket.blob(f"{connection_id}/{state}/{image_uuid}.jpg")
