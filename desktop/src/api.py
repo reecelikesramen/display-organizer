@@ -16,6 +16,7 @@ def create_connection() -> str:
     response = requests.request(
         "POST", f"{BASE_URL}/create_connection", headers=HEADERS
     )
+    response.raise_for_status()
     print(response.text)
     return response.json().get("connection_id")
 
@@ -29,6 +30,7 @@ def get_connected_mobile_device_id(connection_id: str) -> ConnectedMobileDevice:
     response = requests.request(
         "GET", f"{BASE_URL}/connected_mobile_device_id/{connection_id}", headers=HEADERS
     )
+    response.raise_for_status()
     print(response.text)
     return ConnectedMobileDevice.model_validate_json(response.text)
 
@@ -39,6 +41,7 @@ def set_connection_state(connection_id: str, state: str):
         f"{BASE_URL}/connection_state/{connection_id}?state={state}",
         headers=HEADERS,
     )
+    response.raise_for_status()
     print(response.status_code)
 
 
@@ -48,6 +51,7 @@ def end_connection(connection_id: str):
         f"{BASE_URL}/end_connection/{connection_id}",
         headers=HEADERS,
     )
+    response.raise_for_status()
     print(response.status_code)
 
 
@@ -62,6 +66,7 @@ def get_images(connection_id: str, state: str) -> list[np.ndarray]:
         headers=headers,
         stream=True,
     )
+    response.raise_for_status()
 
     images = []
     with zipfile.ZipFile(BytesIO(response.content)) as zip:
@@ -77,6 +82,3 @@ def get_images(connection_id: str, state: str) -> list[np.ndarray]:
                 images.append(img_cv2)
 
     return images
-
-
-print(get_images("a1fb61a3-e916-4c5d-a747-44dfbf759e49", "organizing"))

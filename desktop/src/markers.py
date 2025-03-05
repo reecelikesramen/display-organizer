@@ -2,7 +2,7 @@ from itertools import product
 import cv2
 import numpy as np
 import qrcode
-from constants import ARUCO_TAG_DICTIONARY, CHESSBOARD
+from constants import ARUCO_TAG_DICTIONARY, CHESSBOARD, QR_CODE_PREFIX
 
 
 def make_qr_code_img(connection_id: str, qr_size_px: int) -> np.ndarray:
@@ -10,7 +10,7 @@ def make_qr_code_img(connection_id: str, qr_size_px: int) -> np.ndarray:
         error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4
     )
 
-    qr.add_data(f"DISPLAY_ORGANIZER{connection_id}")
+    qr.add_data(f"{QR_CODE_PREFIX}{connection_id}")
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white")
     qr_img = qr_img.resize((qr_size_px, qr_size_px))
